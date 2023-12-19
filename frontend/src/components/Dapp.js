@@ -20,7 +20,7 @@ import { WaitingForTransactionMessage } from "./WaitingForTransactionMessage";
 import { NoTokensMessage } from "./NoTokensMessage";
 
 // This is the default id used by the Hardhat Network
-const HARDHAT_NETWORK_ID = '31337';
+const HARDHAT_NETWORK_ID = "31337";
 
 // This is an error code that indicates that the user canceled a transaction
 const ERROR_CODE_TX_REJECTED_BY_USER = 4001;
@@ -46,7 +46,9 @@ export class Dapp extends React.Component {
       tokenData: undefined,
       // The user's address and balance
       selectedAddress: undefined,
-      balance: undefined,
+      balance1: undefined,
+      balance2: undefined,
+      balance3: undefined,
       // The ID about transactions being sent, and any possible error with them
       txBeingSent: undefined,
       transactionError: undefined,
@@ -72,8 +74,8 @@ export class Dapp extends React.Component {
     // clicks a button. This callback just calls the _connectWallet method.
     if (!this.state.selectedAddress) {
       return (
-        <ConnectWallet 
-          connectWallet={() => this._connectWallet()} 
+        <ConnectWallet
+          connectWallet={() => this._connectWallet()}
           networkError={this.state.networkError}
           dismiss={() => this._dismissNetworkError()}
         />
@@ -82,22 +84,30 @@ export class Dapp extends React.Component {
 
     // If the token data or the user's balance hasn't loaded yet, we show
     // a loading component.
-    if (!this.state.tokenData || !this.state.balance) {
+
+    if (!this.state.tokenData || !this.state.balance1) {
       return <Loading />;
     }
 
     // If everything is loaded, we render the application.
+
     return (
       <div className="container p-4">
         <div className="row">
           <div className="col-12">
             <h1>
-              {this.state.tokenData.name} ({this.state.tokenData.symbol})
+              {this.state.tokenData.name1} ({this.state.tokenData.symbol1})
             </h1>
             <p>
               Welcome <b>{this.state.selectedAddress}</b>, you have{" "}
               <b>
-                {this.state.balance.toString()} {this.state.tokenData.symbol}
+                {this.state.balance1.toString()} {this.state.tokenData.symbol1}{" "}
+              </b>
+              <b>
+                {this.state.balance2.toString()} {this.state.tokenData.symbol2}{" "}
+              </b>
+              <b>
+                {this.state.balance3.toString()} {this.state.tokenData.symbol3}
               </b>
               .
             </p>
@@ -135,7 +145,7 @@ export class Dapp extends React.Component {
             {/*
               If the user has no tokens, we don't show the Transfer form
             */}
-            {this.state.balance.eq(0) && (
+            {this.state.balance1.eq(0) && (
               <NoTokensMessage selectedAddress={this.state.selectedAddress} />
             )}
 
@@ -145,12 +155,14 @@ export class Dapp extends React.Component {
               The component doesn't have logic, it just calls the transferTokens
               callback.
             */}
-            {this.state.balance.gt(0) && (
+            {this.state.balance1.gt(0) && (
               <Transfer
-                transferTokens={(to, amount) =>
-                  this._transferTokens(to, amount)
+                transferTokens={(to, amount1, amount2, price) =>
+                  this._transferTokens(to, amount1, amount2, price)
                 }
-                tokenSymbol={this.state.tokenData.symbol}
+                tokenSymbol1={this.state.tokenData.symbol1}
+                tokenSymbol2={this.state.tokenData.symbol2}
+                tokenSymbol3={this.state.tokenData.symbol3}
               />
             )}
           </div>
@@ -171,7 +183,9 @@ export class Dapp extends React.Component {
 
     // To connect to the user's wallet, we have to run this method.
     // It returns a promise that will resolve to the user's address.
-    const [selectedAddress] = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const [selectedAddress] = await window.ethereum.request({
+      method: "eth_requestAccounts",
+    });
 
     // Once we have the address, we can initialize the application.
 
@@ -186,11 +200,11 @@ export class Dapp extends React.Component {
       // `accountsChanged` event can be triggered with an undefined newAddress.
       // This happens when the user removes the Dapp from the "Connected
       // list of sites allowed access to your addresses" (Metamask > Settings > Connections)
-      // To avoid errors, we reset the dapp state 
+      // To avoid errors, we reset the dapp state
       if (newAddress === undefined) {
         return this._resetState();
       }
-      
+
       this._initialize(newAddress);
     });
   }
@@ -248,21 +262,35 @@ export class Dapp extends React.Component {
   // The next two methods just read from the contract and store the results
   // in the component state.
   async _getTokenData() {
-    const name = await this._token.name();
-    const symbol = await this._token.symbol();
+    const name1 = await this._token.name1();
+    const symbol1 = await this._token.symbol1();
+    const symbol2 = await this._token.symbol2();
+    const symbol3 = await this._token.symbol3();
 
-    this.setState({ tokenData: { name, symbol } });
+    this.setState({ tokenData: { name1, symbol1, symbol2, symbol3 } });
+  }
+
+  async _getAddressBalance(address) {
+    const balance = await this._provider.getBalance(address);
+    return ethers.utils.formatEther(balance);
   }
 
   async _updateBalance() {
-    const balance = await this._token.balanceOf(this.state.selectedAddress);
-    this.setState({ balance });
+    const balance1 = await this._token.balanceOfToken1(
+      this.state.selectedAddress
+    );
+    const balance2 = await this._token.balanceOfToken2(
+      this.state.selectedAddress
+    );
+    const balance3 = await this._getAddressBalance(this.state.selectedAddress);
+    this.setState({ balance1, balance2, balance3 });
   }
 
   // This method sends an ethereum transaction to transfer tokens.
   // While this action is specific to this application, it illustrates how to
   // send a transaction.
-  async _transferTokens(to, amount) {
+  async _transferTokens(to, amount1, amount2, price) {
+    console.log(amount1, amount2, price);
     // Sending a transaction is a complex operation:
     //   - The user can reject it
     //   - It can fail before reaching the ethereum network (i.e. if the user
@@ -284,7 +312,9 @@ export class Dapp extends React.Component {
 
       // We send the transaction, and save its hash in the Dapp's state. This
       // way we can indicate that we are waiting for it to be mined.
-      const tx = await this._token.transfer(to, amount);
+      const tx = await this._token.transfer(to, amount1, amount2, {
+        value: price,
+      });
       this.setState({ txBeingSent: tx.hash });
 
       // We use .wait() to wait for the transaction to be mined. This method
@@ -345,7 +375,7 @@ export class Dapp extends React.Component {
   }
 
   async _switchChain() {
-    const chainIdHex = `0x${HARDHAT_NETWORK_ID.toString(16)}`
+    const chainIdHex = `0x${HARDHAT_NETWORK_ID.toString(16)}`;
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: chainIdHex }],
